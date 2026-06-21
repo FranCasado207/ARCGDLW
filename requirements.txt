@@ -1,0 +1,7 @@
+PyQt6>=6.11.0
+pyqtdarktheme>=2.1.0
+
+# System dependencies (install separately, not via pip):
+#   gallery-dl  — https://github.com/mikf/gallery-dl
+#   ffmpeg      — https://ffmpeg.org/
+#   rar         — optional, only needed for .rar/.cbr archive output
