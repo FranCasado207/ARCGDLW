@@ -2,6 +2,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -198,7 +199,7 @@ class Downloader:
 
         return archive_path
 
-    def download(self, log_callback=None) -> list[Path]:
+    def download(self, log_callback=None, max_retries: int = 3, retry_delay: float = 5.0) -> list[Path]:
         """Loops through URLs sequentially to prevent archive collisions."""
         all_final_files = []
 
@@ -206,15 +207,27 @@ class Downloader:
             if log_callback:
                 log_callback(f"\n⏳ Processing URL: {url}")
 
-            # Each URL gets its own clean temporary sandbox
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir)
+            temp_dir_path = Path(tempfile.mkdtemp())
 
-                try:
-                    downloaded_files = self._download_with_gallery_dl(temp_path, url)
-                except Exception as e:
+            try:
+                downloaded_files = None
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        downloaded_files = self._download_with_gallery_dl(temp_dir_path, url)
+                        break
+                    except Exception as e:
+                        if log_callback:
+                            log_callback(f"⚠️ Attempt {attempt}/{max_retries} failed for {url}: {e}")
+                        if attempt < max_retries:
+                            if log_callback:
+                                log_callback(f"🔄 Retrying in {retry_delay:.0f}s...")
+                            time.sleep(retry_delay)
+                            shutil.rmtree(temp_dir_path)
+                            temp_dir_path.mkdir()
+
+                if downloaded_files is None:
                     if log_callback:
-                        log_callback(f"⚠️ Error downloading {url}: {e}")
+                        log_callback(f"❌ All {max_retries} attempts failed for {url}, skipping.")
                     continue
 
                 if not downloaded_files:
@@ -258,5 +271,8 @@ class Downloader:
 
                         if log_callback:
                             log_callback(f"📄 Saved: {dest.name}")
+
+            finally:
+                shutil.rmtree(temp_dir_path, ignore_errors=True)
 
         return all_final_files

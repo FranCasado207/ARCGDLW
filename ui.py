@@ -26,7 +26,9 @@ class DownloadWorker(QThread):
     log_signal = pyqtSignal(str)
     finished_signal = pyqtSignal()
 
-    def __init__(self, output_folder, urls, target_format, override_format, archive_format):
+    def __init__(
+        self, output_folder, urls, target_format, override_format, archive_format
+    ):
         super().__init__()
         self.output_folder = output_folder
         self.urls = urls
@@ -80,7 +82,9 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(15)
 
         title_label = QLabel("Gallery Downloader")
-        title_label.setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 10px;")
+        title_label.setStyleSheet(
+            "font-size: 20px; font-weight: bold; margin-bottom: 10px;"
+        )
         main_layout.addWidget(title_label)
 
         form_layout = QFormLayout()
@@ -186,6 +190,7 @@ class MainWindow(QMainWindow):
 
 def launch_gui():
     import sys
+
     app = QApplication(sys.argv)
     qdarktheme.setup_theme("auto")
     window = MainWindow()
