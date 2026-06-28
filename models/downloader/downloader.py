@@ -15,6 +15,7 @@ class Downloader:
         targetFormat: str,
         overrideFormat: bool = False,
         archiveFormat: str | None = None,
+        configFile: str | None = None,
     ) -> None:
         self.urls = urls
 
@@ -27,6 +28,7 @@ class Downloader:
         self.archiveFormat = (
             archiveFormat.lower().lstrip(".") if archiveFormat else None
         )
+        self.configFile = configFile
 
         self._verify_dependencies()
 
@@ -45,16 +47,12 @@ class Downloader:
         """Now processes a single URL at a time."""
         before = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
 
-        # Run gallery-dl for just this specific URL
-        subprocess.run(
-            [
-                "gallery-dl",
-                "-d",
-                str(target_folder),
-                url,
-            ],
-            check=True,
-        )
+        cmd = ["gallery-dl", "-d", str(target_folder)]
+        if self.configFile:
+            cmd += ["-c", str(self.configFile)]
+        cmd.append(url)
+
+        subprocess.run(cmd, check=True)
 
         after = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
         new_files = list(after - before)
@@ -199,11 +197,14 @@ class Downloader:
 
         return archive_path
 
-    def download(self, log_callback=None, max_retries: int = 3, retry_delay: float = 5.0) -> list[Path]:
+    def download(self, log_callback=None, progress_callback=None, max_retries: int = 3, retry_delay: float = 5.0) -> list[Path]:
         """Loops through URLs sequentially to prevent archive collisions."""
         all_final_files = []
+        total = len(self.urls)
 
-        for url in self.urls:
+        for i, url in enumerate(self.urls):
+            if progress_callback:
+                progress_callback(i, total)
             if log_callback:
                 log_callback(f"\n⏳ Processing URL: {url}")
 
@@ -274,5 +275,8 @@ class Downloader:
 
             finally:
                 shutil.rmtree(temp_dir_path, ignore_errors=True)
+
+        if progress_callback:
+            progress_callback(total, total)
 
         return all_final_files
