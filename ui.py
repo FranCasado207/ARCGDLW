@@ -5,7 +5,7 @@ from pathlib import Path
 import qdarktheme
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtCore import QEvent
-from PyQt6.QtGui import QCursor, QEnterEvent, QPixmap, QResizeEvent
+from PyQt6.QtGui import QCursor, QEnterEvent, QIcon, QPixmap, QResizeEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -32,6 +32,8 @@ import app_settings
 from models.downloader.downloader import Downloader
 from models.task.task import Task, TaskStatus
 from models.task.task_manager import TaskManager
+
+APP_ICON_PATH = Path(__file__).resolve().parent / "assets" / "icon.png"
 
 # Extra QSS layered on top of qdarktheme for a more polished look
 _EXTRA_QSS = """
@@ -136,6 +138,7 @@ class TaskWorker(QThread):
                 overrideFormat=self.task.override_format,
                 archiveFormat=self.task.archive_format,
                 configFile=app_settings.get("gallery_dl_config"),
+                cookiesFile=self.task.cookies_file or None,
             )
             downloader.download(
                 log_callback=self.log_signal.emit,
@@ -180,9 +183,9 @@ def _pick_folder_native(start_path: str) -> str | None:
     return None
 
 
-def _pick_file_native(start_path: str, title: str = "Select File") -> str | None:
+def _pick_file_native(start_path: str, title: str = "Select File", filter: str = "*.json *.conf") -> str | None:
     for cmd in (
-        ["kdialog", "--getopenfilename", start_path, "*.json *.conf"],
+        ["kdialog", "--getopenfilename", start_path, filter],
         ["zenity", "--file-selection", f"--filename={start_path}/", "--title", title],
     ):
         try:
@@ -237,7 +240,7 @@ class PreviewLabel(QLabel):
             Qt.TransformationMode.SmoothTransformation,
         )
 
-        popup = QWidget(None, Qt.WindowType.ToolTip)
+        popup = QWidget(self, Qt.WindowType.ToolTip)
         popup.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         popup.setStyleSheet(
             "background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 4px;"
@@ -566,6 +569,21 @@ class CreateTaskDialog(QDialog):
         self.archive_combo.setFixedWidth(150)
         form.addRow("Archive Mode:", self.archive_combo)
 
+        cookies_row = QHBoxLayout()
+        self.cookies_input = QLineEdit()
+        self.cookies_input.setPlaceholderText("Optional — path to cookies.txt")
+        self.cookies_input.setReadOnly(True)
+        cookies_browse_btn = QPushButton("Browse")
+        cookies_browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cookies_browse_btn.clicked.connect(self._browse_cookies)
+        cookies_clear_btn = QPushButton("Clear")
+        cookies_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cookies_clear_btn.clicked.connect(lambda: self.cookies_input.clear())
+        cookies_row.addWidget(self.cookies_input)
+        cookies_row.addWidget(cookies_browse_btn)
+        cookies_row.addWidget(cookies_clear_btn)
+        form.addRow("Cookies File:", cookies_row)
+
         self.auto_start_check = QCheckBox("Start automatically after creation")
         self.auto_start_check.setCursor(Qt.CursorShape.PointingHandCursor)
         form.addRow("", self.auto_start_check)
@@ -597,6 +615,12 @@ class CreateTaskDialog(QDialog):
         if folder:
             self.output_input.setText(folder)
 
+    def _browse_cookies(self):
+        start = str(Path.home())
+        chosen = _pick_file_native(start, "Select cookies.txt", filter="*.txt")
+        if chosen:
+            self.cookies_input.setText(chosen)
+
     def _populate(self, task: Task):
         self.name_input.setText(task.name)
         self.urls_input.setPlainText("\n".join(task.urls))
@@ -609,6 +633,7 @@ class CreateTaskDialog(QDialog):
         idx = self.archive_combo.findText(combo_val)
         if idx >= 0:
             self.archive_combo.setCurrentIndex(idx)
+        self.cookies_input.setText(task.cookies_file or "")
         self.auto_start_check.setChecked(task.start_automatically)
 
     def _validate_and_accept(self):
@@ -630,6 +655,7 @@ class CreateTaskDialog(QDialog):
 
     def get_data(self) -> dict:
         archive_text = self.archive_combo.currentText()
+        cookies = self.cookies_input.text().strip()
         return {
             "name": self.name_input.text().strip(),
             "urls": [u.strip() for u in self.urls_input.toPlainText().splitlines() if u.strip()],
@@ -637,6 +663,7 @@ class CreateTaskDialog(QDialog):
             "target_format": self.target_format_combo.currentText(),
             "override_format": self.override_checkbox.isChecked(),
             "archive_format": archive_text if archive_text != "None" else None,
+            "cookies_file": cookies if cookies else None,
             "start_automatically": self.auto_start_check.isChecked(),
         }
 
@@ -785,6 +812,7 @@ class TasksTab(QWidget):
         task.target_format = data["target_format"]
         task.override_format = data["override_format"]
         task.archive_format = data["archive_format"]
+        task.cookies_file = data["cookies_file"]
         task.start_automatically = data["start_automatically"]
         if task.status == TaskStatus.ERROR:
             task.status = TaskStatus.PENDING
@@ -1148,6 +1176,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gallery Downloader")
+        self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.resize(740, 640)
 
         central = QWidget()
@@ -1167,6 +1196,7 @@ def launch_gui():
     import sys
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     qdarktheme.setup_theme("auto", additional_qss=_EXTRA_QSS)
     window = MainWindow()
     window.show()

@@ -59,6 +59,8 @@ class TaskManager:
                 cmd = ["gallery-dl", "-d", str(tmp_path), "--range", "1-1"]
                 if config_file:
                     cmd += ["-c", str(config_file)]
+                if task.cookies_file:
+                    cmd += ["--cookies", str(task.cookies_file)]
                 cmd.append(url)
                 subprocess.run(
                     cmd,

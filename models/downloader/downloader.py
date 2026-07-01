@@ -16,6 +16,7 @@ class Downloader:
         overrideFormat: bool = False,
         archiveFormat: str | None = None,
         configFile: str | None = None,
+        cookiesFile: str | None = None,
     ) -> None:
         self.urls = urls
 
@@ -29,6 +30,7 @@ class Downloader:
             archiveFormat.lower().lstrip(".") if archiveFormat else None
         )
         self.configFile = configFile
+        self.cookiesFile = cookiesFile
 
         self._verify_dependencies()
 
@@ -50,6 +52,8 @@ class Downloader:
         cmd = ["gallery-dl", "-d", str(target_folder)]
         if self.configFile:
             cmd += ["-c", str(self.configFile)]
+        if self.cookiesFile:
+            cmd += ["--cookies", str(self.cookiesFile)]
         cmd.append(url)
 
         subprocess.run(cmd, check=True)
