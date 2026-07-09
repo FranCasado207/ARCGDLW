@@ -32,7 +32,7 @@ import app_settings
 from models.downloader.downloader import Downloader
 from models.task.task import Task, TaskStatus
 from models.task.task_manager import TaskManager
-from paths import resource_path
+from paths import resource_path, subprocess_env
 
 APP_ICON_PATH = resource_path("assets", "icon.png")
 
@@ -178,7 +178,7 @@ def _pick_folder_native(start_path: str) -> str | None:
         ["zenity", "--file-selection", "--directory", f"--filename={start_path}/"],
     ):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, env=subprocess_env())
             return result.stdout.strip() or None
         except FileNotFoundError:
             continue
@@ -191,7 +191,7 @@ def _pick_file_native(start_path: str, title: str = "Select File", filter: str =
         ["zenity", "--file-selection", f"--filename={start_path}/", "--title", title],
     ):
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, env=subprocess_env())
             return result.stdout.strip() or None
         except FileNotFoundError:
             continue
@@ -1126,6 +1126,7 @@ class ConfigTab(QWidget):
             result = subprocess.run(
                 ["gallery-dl", "--config-create"],
                 capture_output=True, text=True, timeout=15,
+                env=subprocess_env(),
             )
             # gallery-dl --config-create exits 0 on success, may print the path
             created = _find_default_config()
@@ -1150,7 +1151,7 @@ class ConfigTab(QWidget):
         folder = str(config_path.parent)
         for cmd in (["xdg-open", folder], ["dolphin", folder], ["nautilus", folder]):
             try:
-                subprocess.Popen(cmd)
+                subprocess.Popen(cmd, env=subprocess_env())
                 return
             except FileNotFoundError:
                 continue

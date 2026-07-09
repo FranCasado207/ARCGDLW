@@ -30,3 +30,26 @@ def resource_path(*parts: str) -> Path:
     """
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base.joinpath(*parts)
+
+
+def subprocess_env() -> dict:
+    """Environment for launching external tools (gallery-dl, ffmpeg, rar,
+    kdialog, xdg-open, ...).
+
+    PyInstaller's onefile Linux/macOS bootloader points *LD_LIBRARY_PATH*
+    (or *DYLD_LIBRARY_PATH*) at its own bundled libs for the lifetime of the
+    frozen process, and that leaks into every subprocess by default. A
+    system binary launched with that environment can end up loading the
+    bundled OpenSSL/zlib/etc. instead of its own and crash immediately
+    (exit status 1, no useful error) — this is what happens to gallery-dl
+    when run from the AppImage. PyInstaller preserves the original value
+    (if any) under a *_ORIG suffix, so restore that instead.
+    """
+    env = os.environ.copy()
+    for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+        orig = env.pop(f"{var}_ORIG", None)
+        if orig is not None:
+            env[var] = orig
+        else:
+            env.pop(var, None)
+    return env

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from models.task.task import Task, TaskStatus
-from paths import get_app_data_dir
+from paths import get_app_data_dir, subprocess_env
 
 _DATA_DIR = get_app_data_dir()
 TASKS_FILE = _DATA_DIR / "tasks.json"
@@ -68,6 +68,7 @@ class TaskManager:
                     check=True,
                     capture_output=True,
                     timeout=60,
+                    env=subprocess_env(),
                 )
                 all_files = sorted(f for f in tmp_path.rglob("*") if f.is_file())
                 images = [f for f in all_files if f.suffix.lower() in _IMAGE_EXTS]

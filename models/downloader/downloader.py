@@ -1,10 +1,15 @@
 import json
+import re
 import shutil
 import subprocess
 import tempfile
 import time
 import zipfile
 from pathlib import Path
+
+from paths import subprocess_env
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class Downloader:
@@ -58,7 +63,15 @@ class Downloader:
             cmd += ["--cookies", str(self.cookiesFile)]
         cmd.append(url)
 
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, env=subprocess_env()
+        )
+        if result.returncode != 0:
+            detail = _ANSI_RE.sub("", result.stderr or result.stdout or "").strip()
+            if detail:
+                tail = "\n".join(detail.splitlines()[-3:])
+                raise RuntimeError(f"gallery-dl failed (exit {result.returncode}): {tail}")
+            raise RuntimeError(f"gallery-dl failed with exit code {result.returncode}")
 
         after = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
         new_files = list(after - before)
@@ -80,6 +93,7 @@ class Downloader:
             capture_output=True,
             text=True,
             check=True,
+            env=subprocess_env(),
         )
 
         data = json.loads(result.stdout)
@@ -124,6 +138,7 @@ class Downloader:
                 str(palette_file),
             ],
             check=True,
+            env=subprocess_env(),
         )
 
         subprocess.run(
@@ -139,6 +154,7 @@ class Downloader:
                 str(gif_file),
             ],
             check=True,
+            env=subprocess_env(),
         )
 
         # Cleanup the temporary palette and the original video file
@@ -199,7 +215,7 @@ class Downloader:
 
         elif self.archiveFormat in ["rar", "cbr"]:
             cmd = ["rar", "a", "-ep", str(archive_path)] + [str(f) for f in files]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, env=subprocess_env())
 
         return archive_path
 
