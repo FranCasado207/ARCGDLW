@@ -32,8 +32,9 @@ import app_settings
 from models.downloader.downloader import Downloader
 from models.task.task import Task, TaskStatus
 from models.task.task_manager import TaskManager
+from paths import resource_path
 
-APP_ICON_PATH = Path(__file__).resolve().parent / "assets" / "icon.png"
+APP_ICON_PATH = resource_path("assets", "icon.png")
 
 # Extra QSS layered on top of qdarktheme for a more polished look
 _EXTRA_QSS = """
@@ -139,6 +140,7 @@ class TaskWorker(QThread):
                 archiveFormat=self.task.archive_format,
                 configFile=app_settings.get("gallery_dl_config"),
                 cookiesFile=self.task.cookies_file or None,
+                createSubfolder=self.task.create_subfolder,
             )
             downloader.download(
                 log_callback=self.log_signal.emit,
@@ -551,6 +553,14 @@ class CreateTaskDialog(QDialog):
         folder_row.addWidget(browse_btn)
         form.addRow("Output Folder:", folder_row)
 
+        self.subfolder_checkbox = QCheckBox("Create a sub-folder")
+        self.subfolder_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.subfolder_checkbox.setToolTip(
+            "Keep each URL's downloads in its own sub-folder (named automatically\n"
+            "by gallery-dl) instead of dumping every file into the output folder."
+        )
+        form.addRow("", self.subfolder_checkbox)
+
         format_row = QHBoxLayout()
         self.target_format_combo = QComboBox()
         self.target_format_combo.addItems(["gif", "mp4", "webm", "mkv"])
@@ -625,6 +635,7 @@ class CreateTaskDialog(QDialog):
         self.name_input.setText(task.name)
         self.urls_input.setPlainText("\n".join(task.urls))
         self.output_input.setText(task.output_folder)
+        self.subfolder_checkbox.setChecked(task.create_subfolder)
         idx = self.target_format_combo.findText(task.target_format)
         if idx >= 0:
             self.target_format_combo.setCurrentIndex(idx)
@@ -664,6 +675,7 @@ class CreateTaskDialog(QDialog):
             "override_format": self.override_checkbox.isChecked(),
             "archive_format": archive_text if archive_text != "None" else None,
             "cookies_file": cookies if cookies else None,
+            "create_subfolder": self.subfolder_checkbox.isChecked(),
             "start_automatically": self.auto_start_check.isChecked(),
         }
 
@@ -813,6 +825,7 @@ class TasksTab(QWidget):
         task.override_format = data["override_format"]
         task.archive_format = data["archive_format"]
         task.cookies_file = data["cookies_file"]
+        task.create_subfolder = data["create_subfolder"]
         task.start_automatically = data["start_automatically"]
         if task.status == TaskStatus.ERROR:
             task.status = TaskStatus.PENDING

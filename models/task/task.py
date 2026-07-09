@@ -22,6 +22,7 @@ class Task:
         override_format: bool = False,
         archive_format: str | None = None,
         cookies_file: str | None = None,
+        create_subfolder: bool = False,
         start_automatically: bool = False,
         task_id: str | None = None,
         status: TaskStatus = TaskStatus.PENDING,
@@ -37,6 +38,7 @@ class Task:
         self.override_format = override_format
         self.archive_format = archive_format
         self.cookies_file = cookies_file
+        self.create_subfolder = create_subfolder
         self.start_automatically = start_automatically
         self.status = status
         self.preview_image = Path(preview_image) if preview_image else None
@@ -53,6 +55,7 @@ class Task:
             "override_format": self.override_format,
             "archive_format": self.archive_format,
             "cookies_file": self.cookies_file,
+            "create_subfolder": self.create_subfolder,
             "start_automatically": self.start_automatically,
             "status": self.status.value,
             "preview_image": str(self.preview_image) if self.preview_image else None,
@@ -71,6 +74,7 @@ class Task:
             override_format=data["override_format"],
             archive_format=data.get("archive_format"),
             cookies_file=data.get("cookies_file"),
+            create_subfolder=data.get("create_subfolder", False),
             start_automatically=data.get("start_automatically", False),
             status=TaskStatus(data["status"]),
             preview_image=data.get("preview_image"),

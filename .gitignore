@@ -12,3 +12,14 @@ wheels/
 downloads
 previews
 tasks.json
+
+# Local AppImage build artifacts
+AppDir/
+appimagetool
+*.AppImage
+
+upscale_models
+models
+pkg
+__pycache__
+previews

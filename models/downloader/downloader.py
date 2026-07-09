@@ -17,6 +17,7 @@ class Downloader:
         archiveFormat: str | None = None,
         configFile: str | None = None,
         cookiesFile: str | None = None,
+        createSubfolder: bool = False,
     ) -> None:
         self.urls = urls
 
@@ -31,6 +32,7 @@ class Downloader:
         )
         self.configFile = configFile
         self.cookiesFile = cookiesFile
+        self.createSubfolder = createSubfolder
 
         self._verify_dependencies()
 
@@ -260,14 +262,21 @@ class Downloader:
                 # 2. No archive requested (Flat files)
                 else:
                     for file in processed_files:
-                        dest = self.outputFolder / file.name
+                        if self.createSubfolder:
+                            # Preserve the folder structure gallery-dl generated
+                            # for this URL (e.g. category/user/...) instead of
+                            # dumping every file straight into the output folder.
+                            dest = self.outputFolder / file.relative_to(temp_dir_path)
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                        else:
+                            dest = self.outputFolder / file.name
 
                         # Prevent overwriting files with the same name
                         counter = 1
                         while dest.exists():
                             dest = (
-                                self.outputFolder
-                                / f"{file.stem}_{counter}{file.suffix}"
+                                dest.parent
+                                / f"{dest.stem}_{counter}{dest.suffix}"
                             )
                             counter += 1
 
@@ -275,7 +284,9 @@ class Downloader:
                         all_final_files.append(dest)
 
                         if log_callback:
-                            log_callback(f"📄 Saved: {dest.name}")
+                            log_callback(
+                                f"📄 Saved: {dest.relative_to(self.outputFolder)}"
+                            )
 
             finally:
                 shutil.rmtree(temp_dir_path, ignore_errors=True)

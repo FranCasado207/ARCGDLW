@@ -1,7 +1,8 @@
 import json
-from pathlib import Path
 
-_FILE = Path(__file__).parent / "app_settings.json"
+from paths import get_app_data_dir
+
+_FILE = get_app_data_dir() / "app_settings.json"
 
 
 def _load() -> dict:

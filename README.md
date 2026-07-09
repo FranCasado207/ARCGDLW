@@ -133,6 +133,7 @@ ARCGDLW/
 ├── main.py               # Entry point — CLI parser + GUI launcher
 ├── ui.py                 # PyQt6 GUI (window, tabs, task cards, dialogs, workers)
 ├── app_settings.py       # Persistent key-value settings (app_settings.json)
+├── paths.py              # Per-user app data dir + bundled resource path resolution
 ├── models/
 │   ├── downloader/
 │   │   └── downloader.py     # Core download, conversion, and archive logic
@@ -142,6 +143,20 @@ ARCGDLW/
 ├── requirements.txt
 └── pyproject.toml
 ```
+
+---
+
+## Data storage
+
+Settings, saved tasks, and preview thumbnails are stored per-user, outside the install/checkout directory, so they survive updates and work the same whether run from source or as a packaged executable:
+
+| Platform | Location |
+|---|---|
+| Linux | `$XDG_DATA_HOME/ARCGDLW` (defaults to `~/.local/share/ARCGDLW`) |
+| Windows | `%APPDATA%\ARCGDLW` |
+| macOS | `~/Library/Application Support/ARCGDLW` |
+
+This directory contains `app_settings.json`, `tasks.json`, and a `previews/` folder of thumbnail images.
 
 ---
 
@@ -155,7 +170,7 @@ ARCGDLW reads the `gallery-dl` config file to pass through to `gallery-dl` (cook
 2. `~/.gallery-dl.conf`
 3. `/etc/gallery-dl.conf`
 
-You can also browse to a custom path from the Config tab — the choice is saved in `app_settings.json` next to `main.py`.
+You can also browse to a custom path from the Config tab — the choice is saved in `app_settings.json` (see [Data storage](#data-storage)).
 
 To generate a default config skeleton:
 
@@ -173,3 +188,18 @@ Or click **Create Default Config** in the Config tab.
 |---|---|---|
 | `PyQt6` | ≥ 6.11 | GUI framework |
 | `pyqtdarktheme` | ≥ 2.1 | Auto dark/light theme |
+
+---
+
+## Building standalone executables
+
+A [PyInstaller](https://pyinstaller.org/) spec (`main.spec`) builds a single-file executable that bundles the `assets/` folder:
+
+```bash
+pip install pyinstaller
+pyinstaller main.spec
+```
+
+This produces `dist/ARCGDLW` (Linux) or `dist/ARCGDLW.exe` (Windows).
+
+`.github/workflows/build.yml` builds both on every push/PR to `main` and on `v*` tags, and additionally wraps the Linux binary into an `ARCGDLW-x86_64.AppImage` using [AppImageKit](https://github.com/AppImage/AppImageKit). Build artifacts are attached to the workflow run.

@@ -1,0 +1,87 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller main.spec
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARCGDLW-windows
+          path: dist/ARCGDLW.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller main.spec
+
+      - name: Assemble AppDir
+        run: |
+          set -euo pipefail
+          mkdir -p AppDir/usr/bin
+          cp dist/ARCGDLW AppDir/usr/bin/ARCGDLW
+          cp assets/icon.png AppDir/ARCGDLW.png
+
+          cat > AppDir/ARCGDLW.desktop <<'EOF'
+          [Desktop Entry]
+          Name=ARCGDLW
+          Exec=ARCGDLW
+          Icon=ARCGDLW
+          Type=Application
+          Categories=Utility;
+          Terminal=false
+          EOF
+
+          ln -s usr/bin/ARCGDLW AppDir/AppRun
+
+      - name: Build AppImage
+        run: |
+          set -euo pipefail
+          wget -q -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          # Extract-and-run avoids needing FUSE, which isn't available on GitHub-hosted runners.
+          ./appimagetool --appimage-extract-and-run AppDir ARCGDLW-x86_64.AppImage
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARCGDLW-linux
+          path: |
+            dist/ARCGDLW
+            ARCGDLW-x86_64.AppImage

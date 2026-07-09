@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import List, Optional
 
 from models.task.task import Task, TaskStatus
+from paths import get_app_data_dir
 
-_ROOT = Path(__file__).parent.parent.parent
-TASKS_FILE = _ROOT / "tasks.json"
-PREVIEWS_DIR = _ROOT / "previews"
+_DATA_DIR = get_app_data_dir()
+TASKS_FILE = _DATA_DIR / "tasks.json"
+PREVIEWS_DIR = _DATA_DIR / "previews"
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
 
