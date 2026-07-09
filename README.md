@@ -30,8 +30,14 @@ Full feature parity with the GUI via command-line arguments, making it scriptabl
 **Python ≥ 3.12**
 
 ```bash
-pip install -r requirements.txt
+pip install uv
+uv pip install --system -r requirements.txt
 ```
+
+> `pyqtdarktheme`'s published metadata caps `Requires-Python` at `<3.12`, even though it
+> works fine on 3.12 — plain `pip install -r requirements.txt` will refuse to install it
+> on 3.12. `uv` doesn't enforce that stale bound. (Drop `--system` if installing into an
+> already-activated virtualenv.)
 
 **System tools** (must be available on your `PATH`):
 
@@ -54,7 +60,8 @@ pip install -r requirements.txt
 git clone https://github.com/FranCasado207/ARCGDLW.git
 cd ARCGDLW
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install uv
+uv pip install -r requirements.txt
 ```
 
 ---
