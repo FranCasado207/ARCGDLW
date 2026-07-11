@@ -19,7 +19,6 @@ appimagetool
 *.AppImage
 
 upscale_models
-models
 pkg
 __pycache__
 previews
