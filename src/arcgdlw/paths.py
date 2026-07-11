@@ -28,7 +28,7 @@ def resource_path(*parts: str) -> Path:
     when run from source and when frozen by PyInstaller (which extracts
     data files under sys._MEIPASS).
     """
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
     return base.joinpath(*parts)
 
 

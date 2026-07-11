@@ -5,8 +5,8 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from models.task.task import Task, TaskStatus
-from paths import get_app_data_dir, subprocess_env
+from arcgdlw.models.task.task import Task, TaskStatus
+from arcgdlw.paths import get_app_data_dir, subprocess_env
 
 _DATA_DIR = get_app_data_dir()
 TASKS_FILE = _DATA_DIR / "tasks.json"
@@ -49,7 +49,7 @@ class TaskManager:
 
     def fetch_preview(self, task: Task) -> Optional[Path]:
         """Download only the first file from the first URL to use as a thumbnail."""
-        import app_settings
+        from arcgdlw import app_settings
         if not task.urls:
             return None
         url = task.urls[0]

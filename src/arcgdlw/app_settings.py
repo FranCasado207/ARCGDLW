@@ -1,6 +1,6 @@
 import json
 
-from paths import get_app_data_dir
+from arcgdlw.paths import get_app_data_dir
 
 _FILE = get_app_data_dir() / "app_settings.json"
 

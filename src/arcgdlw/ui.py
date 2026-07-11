@@ -28,11 +28,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-import app_settings
-from models.downloader.downloader import Downloader
-from models.task.task import Task, TaskStatus
-from models.task.task_manager import TaskManager
-from paths import resource_path, subprocess_env
+from arcgdlw import app_settings
+from arcgdlw.models.downloader.downloader import Downloader
+from arcgdlw.models.task.task import Task, TaskStatus
+from arcgdlw.models.task.task_manager import TaskManager
+from arcgdlw.paths import resource_path, subprocess_env
 
 APP_ICON_PATH = resource_path("assets", "icon.png")
 

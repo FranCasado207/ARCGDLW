@@ -137,16 +137,19 @@ Each URL is processed in its own temp directory and cleaned up afterwards regard
 
 ```
 ARCGDLW/
-├── main.py               # Entry point — CLI parser + GUI launcher
-├── ui.py                 # PyQt6 GUI (window, tabs, task cards, dialogs, workers)
-├── app_settings.py       # Persistent key-value settings (app_settings.json)
-├── paths.py              # Per-user app data dir + bundled resource path resolution
-├── models/
-│   ├── downloader/
-│   │   └── downloader.py     # Core download, conversion, and archive logic
-│   └── task/
-│       ├── task.py           # Task dataclass + TaskStatus enum
-│       └── task_manager.py   # Task CRUD + persistence (tasks.json)
+├── main.py                       # Thin entry point — adds src/ to sys.path and delegates to arcgdlw.main
+├── src/
+│   └── arcgdlw/
+│       ├── main.py               # CLI parser + GUI launcher
+│       ├── ui.py                 # PyQt6 GUI (window, tabs, task cards, dialogs, workers)
+│       ├── app_settings.py       # Persistent key-value settings (app_settings.json)
+│       ├── paths.py              # Per-user app data dir + bundled resource path resolution
+│       └── models/
+│           ├── downloader/
+│           │   └── downloader.py     # Core download, conversion, and archive logic
+│           └── task/
+│               ├── task.py           # Task dataclass + TaskStatus enum
+│               └── task_manager.py   # Task CRUD + persistence (tasks.json)
 ├── requirements.txt
 └── pyproject.toml
 ```

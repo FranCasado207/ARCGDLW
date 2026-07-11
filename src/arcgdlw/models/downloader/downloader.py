@@ -7,7 +7,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from paths import subprocess_env
+from arcgdlw.paths import subprocess_env
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
