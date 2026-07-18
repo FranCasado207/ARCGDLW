@@ -1,5 +1,4 @@
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,30 +21,6 @@ def get_app_data_dir() -> Path:
     data_dir = base / APP_NAME
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
-
-
-def resource_path(*parts: str) -> Path:
-    """Resolve a bundled, read-only resource (e.g. an icon), working both
-    when run from source and when frozen by PyInstaller (which extracts
-    data files under sys._MEIPASS).
-    """
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
-    return base.joinpath(*parts)
-
-
-def open_in_file_manager(path: Path) -> None:
-    """Open *path* in the OS's default file manager."""
-    if sys.platform == "win32":
-        os.startfile(path)  # type: ignore[attr-defined]
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(path)], env=subprocess_env())
-    else:
-        for cmd in (["xdg-open", str(path)], ["dolphin", str(path)], ["nautilus", str(path)]):
-            try:
-                subprocess.Popen(cmd, env=subprocess_env())
-                return
-            except FileNotFoundError:
-                continue
 
 
 def subprocess_env() -> dict:

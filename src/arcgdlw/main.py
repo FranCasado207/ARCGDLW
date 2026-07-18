@@ -59,13 +59,31 @@ def main() -> None:
     archive_group.add_argument("--rar", action="store_true", help="Archive as .rar (Requires 'rar' installed)")
     archive_group.add_argument("--cbr", action="store_true", help="Archive as Comic Book Rar (.cbr)")
 
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run the local API server the ARCGDLW desktop app talks to "
+        "(internal; this is what the Tauri shell spawns as its sidecar)",
+    )
+    parser.add_argument(
+        "--host", default="127.0.0.1",
+        help="Host to bind the API server to (only with --serve)",
+    )
+    parser.add_argument(
+        "--port", type=int, default=0,
+        help="Port to bind the API server to, 0 picks a free port (only with --serve)",
+    )
+
     args = parser.parse_args()
 
-    if args.urls:
+    if args.serve:
+        from arcgdlw.server import run_server
+        run_server(host=args.host, port=args.port)
+    elif args.urls:
         run_cli(args)
     else:
-        from arcgdlw.ui import launch_gui
-        launch_gui()
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
