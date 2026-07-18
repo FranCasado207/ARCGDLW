@@ -7,6 +7,7 @@ random bearer token minted for this run — see run_server() below.
 """
 
 import asyncio
+import os
 import secrets
 import socket
 from contextlib import asynccontextmanager
@@ -68,7 +69,10 @@ def _pick_free_port(host: str) -> int:
 
 
 def run_server(host: str = "127.0.0.1", port: int = 0) -> None:
-    token = secrets.token_hex(16)
+    # `npm run tauri dev` spawns this directly (not as a compiled sidecar) so
+    # the frontend's .env.development can pin a stable token instead of
+    # re-reading a fresh random one from stdout on every restart.
+    token = os.environ.get("ARCGDLW_DEV_TOKEN") or secrets.token_hex(16)
     if port == 0:
         port = _pick_free_port(host)
 
