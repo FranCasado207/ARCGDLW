@@ -35,7 +35,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Download and process gallery links.")
 
     parser.add_argument(
-        "urls", nargs="*", help="The URLs to download from (leave empty to launch GUI)"
+        "urls", nargs="*",
+        help="The URLs to download from. Leave empty (and without --serve) to just print this help "
+        "- use the ARCGDLW desktop app for a GUI.",
     )
     parser.add_argument(
         "-o", "--output",
