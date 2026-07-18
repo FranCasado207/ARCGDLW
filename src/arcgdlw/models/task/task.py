@@ -29,6 +29,7 @@ class Task:
         preview_image: Path | str | None = None,
         error_message: str | None = None,
         created_at: datetime | None = None,
+        output_files: List[str] | None = None,
     ):
         self.id = task_id or str(uuid.uuid4())
         self.name = name
@@ -44,6 +45,7 @@ class Task:
         self.preview_image = Path(preview_image) if preview_image else None
         self.error_message = error_message
         self.created_at = created_at or datetime.now()
+        self.output_files = output_files or []
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +63,7 @@ class Task:
             "preview_image": str(self.preview_image) if self.preview_image else None,
             "error_message": self.error_message,
             "created_at": self.created_at.isoformat(),
+            "output_files": self.output_files,
         }
 
     @classmethod
@@ -80,4 +83,5 @@ class Task:
             preview_image=data.get("preview_image"),
             error_message=data.get("error_message"),
             created_at=datetime.fromisoformat(data["created_at"]),
+            output_files=data.get("output_files"),
         )

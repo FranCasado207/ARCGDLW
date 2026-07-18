@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
+from arcgdlw import task_logs
 from arcgdlw.models.task.task import Task, TaskStatus
 from arcgdlw.paths import get_app_data_dir, subprocess_env
 
@@ -40,12 +41,38 @@ class TaskManager:
                 break
         self._save()
 
-    def delete(self, task_id: str) -> None:
+    def delete(self, task_id: str, delete_files: bool = False) -> None:
         task = self.get(task_id)
-        if task and task.preview_image and task.preview_image.exists():
-            task.preview_image.unlink(missing_ok=True)
+        if task:
+            if task.preview_image and task.preview_image.exists():
+                task.preview_image.unlink(missing_ok=True)
+            if delete_files:
+                self._delete_output_files(task)
+        task_logs.clear(task_id)
         self._tasks = [t for t in self._tasks if t.id != task_id]
         self._save()
+
+    @staticmethod
+    def _delete_output_files(task: Task) -> None:
+        """Delete every file the task downloaded, then prune any now-empty
+        sub-folders ("create a sub-folder" mode) — never the output folder
+        itself, since it may be shared with other tasks."""
+        output_root = Path(task.output_folder).resolve()
+        for file_str in task.output_files:
+            file_path = Path(file_str).resolve()
+            try:
+                if file_path.is_file():
+                    file_path.unlink()
+            except OSError:
+                continue
+
+            parent = file_path.parent
+            while parent != output_root and output_root in parent.parents:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
 
     def fetch_preview(self, task: Task) -> Optional[Path]:
         """Download only the first file from the first URL to use as a thumbnail."""

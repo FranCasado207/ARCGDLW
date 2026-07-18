@@ -22,19 +22,43 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSystemTrayIcon,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from arcgdlw import app_settings
+from arcgdlw import app_settings, task_logs
 from arcgdlw.models.downloader.downloader import Downloader
 from arcgdlw.models.task.task import Task, TaskStatus
 from arcgdlw.models.task.task_manager import TaskManager
-from arcgdlw.paths import resource_path, subprocess_env
+from arcgdlw.paths import get_app_data_dir, open_in_file_manager, resource_path, subprocess_env
 
 APP_ICON_PATH = resource_path("assets", "icon.png")
+
+_tray_icon: QSystemTrayIcon | None = None
+
+
+def _get_tray_icon() -> QSystemTrayIcon | None:
+    """Lazily create a shared tray icon used only to surface notifications
+    (no menu/click behavior — the app has no "minimize to tray" mode)."""
+    global _tray_icon
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        return None
+    if _tray_icon is None:
+        _tray_icon = QSystemTrayIcon(QIcon(str(APP_ICON_PATH)))
+        _tray_icon.setToolTip("ARCGDLW")
+        _tray_icon.show()
+    return _tray_icon
+
+
+def notify(title: str, message: str, is_error: bool = False) -> None:
+    tray = _get_tray_icon()
+    if tray is None:
+        return
+    icon = QSystemTrayIcon.MessageIcon.Critical if is_error else QSystemTrayIcon.MessageIcon.Information
+    tray.showMessage(title, message, icon, 5000)
 
 # Extra QSS layered on top of qdarktheme for a more polished look
 _EXTRA_QSS = """
@@ -93,7 +117,7 @@ def _find_default_config() -> Path | None:
 
 class DownloadWorker(QThread):
     log_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal()
+    finished_signal = pyqtSignal(bool)  # success
 
     def __init__(self, output_folder, urls, target_format, override_format, archive_format):
         super().__init__()
@@ -104,6 +128,7 @@ class DownloadWorker(QThread):
         self.archive_format = archive_format
 
     def run(self):
+        success = True
         try:
             downloader = Downloader(
                 outputFolder=self.output_folder,
@@ -117,14 +142,15 @@ class DownloadWorker(QThread):
             self.log_signal.emit("\n✅ All downloads complete!")
         except Exception as e:
             self.log_signal.emit(f"\n❌ Fatal Error: {str(e)}")
+            success = False
         finally:
-            self.finished_signal.emit()
+            self.finished_signal.emit(success)
 
 
 class TaskWorker(QThread):
     log_signal = pyqtSignal(str)
-    progress_signal = pyqtSignal(int, int)   # current_url_index, total_urls
-    finished_signal = pyqtSignal(bool, str)  # success, error_message
+    progress_signal = pyqtSignal(int, int)          # current_url_index, total_urls
+    finished_signal = pyqtSignal(bool, str, list)    # success, error_message, output_files
 
     def __init__(self, task: Task):
         super().__init__()
@@ -141,14 +167,15 @@ class TaskWorker(QThread):
                 configFile=app_settings.get("gallery_dl_config"),
                 cookiesFile=self.task.cookies_file or None,
                 createSubfolder=self.task.create_subfolder,
+                archiveName=self.task.name,
             )
-            downloader.download(
+            output_files = downloader.download(
                 log_callback=self.log_signal.emit,
                 progress_callback=lambda cur, tot: self.progress_signal.emit(cur, tot),
             )
-            self.finished_signal.emit(True, "")
+            self.finished_signal.emit(True, "", [str(p) for p in output_files])
         except Exception as e:
-            self.finished_signal.emit(False, str(e))
+            self.finished_signal.emit(False, str(e), [])
 
 
 class PreviewWorker(QThread):
@@ -395,6 +422,20 @@ class TaskCard(QFrame):
         self.delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.task.id))
         btn_row.addWidget(self.delete_btn)
 
+        self.open_folder_btn = QPushButton("Open Folder")
+        self.open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_folder_btn.setFixedHeight(30)
+        self.open_folder_btn.clicked.connect(self._open_output_folder)
+        self.open_folder_btn.hide()
+        btn_row.addWidget(self.open_folder_btn)
+
+        self.open_file_btn = QPushButton("Open File")
+        self.open_file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_file_btn.setFixedHeight(30)
+        self.open_file_btn.clicked.connect(self._open_output_file)
+        self.open_file_btn.hide()
+        btn_row.addWidget(self.open_file_btn)
+
         btn_row.addStretch()
 
         self.log_toggle_btn = QPushButton("Logs")
@@ -455,6 +496,13 @@ class TaskCard(QFrame):
         self.edit_btn.setEnabled(not running)
         self.delete_btn.setEnabled(not running)
 
+        completed = task.status == TaskStatus.COMPLETED and bool(task.output_files)
+        # A single archive can be opened directly; multiple archives (or no
+        # archiving at all) have no one file to point at, so open the folder.
+        single_archive = completed and bool(task.archive_format) and len(task.output_files) == 1
+        self.open_file_btn.setVisible(single_archive)
+        self.open_folder_btn.setVisible(completed and not single_archive)
+
     def resizeEvent(self, a0: QResizeEvent | None) -> None:
         super().resizeEvent(a0)
         # Scale preview between 80 and 160 px based on card width
@@ -483,6 +531,18 @@ class TaskCard(QFrame):
             self.preview_label.setText("?")
         self.preview_label.set_image_path(img_path)
 
+    def _open_output_folder(self):
+        open_in_file_manager(Path(self.task.output_folder))
+
+    def _open_output_file(self):
+        files = [Path(f) for f in self.task.output_files if Path(f).exists()]
+        if len(files) == 1:
+            open_in_file_manager(files[0])
+        else:
+            # No single file to point at (none/several archives on disk) —
+            # fall back to the containing output folder.
+            open_in_file_manager(Path(self.task.output_folder))
+
     def update_task(self, task: Task):
         self.task = task
         self._refresh()
@@ -507,6 +567,11 @@ class TaskCard(QFrame):
             sb.setValue(sb.maximum())
         if not self.log_toggle_btn.isChecked():
             self.log_toggle_btn.setChecked(True)
+
+    def load_log(self, text: str):
+        """Populate the log panel from a persisted log file without forcing
+        it open (used when restoring a task's history on app start)."""
+        self.log_area.setPlainText(text)
 
 
 class CreateTaskDialog(QDialog):
@@ -680,6 +745,81 @@ class CreateTaskDialog(QDialog):
         }
 
 
+class DeleteTaskDialog(QDialog):
+    def __init__(self, task: Task, parent=None):
+        super().__init__(parent)
+        self.task = task
+        self.setWindowTitle("Delete Task")
+        self.setMinimumWidth(440)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+
+        title = QLabel(f'Delete "{self.task.name}"?')
+        title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        count = len(self.task.urls)
+        archive_str = self.task.archive_format or "no archive"
+        details = QLabel(
+            f"{count} URL{'s' if count != 1 else ''} · {self.task.target_format} · {archive_str}\n"
+            f"Output folder: {self.task.output_folder}"
+        )
+        details.setWordWrap(True)
+        details.setStyleSheet("color: #888; font-size: 12px;")
+        layout.addWidget(details)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: rgba(255,255,255,0.08);")
+        layout.addWidget(sep)
+
+        has_files = bool(self.task.output_files)
+        self.delete_files_checkbox = QCheckBox("Also delete the downloaded files from disk")
+        self.delete_files_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_files_checkbox.setEnabled(has_files)
+        self.delete_files_checkbox.setToolTip(
+            "Permanently deletes everything this task downloaded (archives or "
+            "individual files). This cannot be undone."
+            if has_files else
+            "This task has no completed downloads on record to delete."
+        )
+        self.delete_files_checkbox.toggled.connect(self._on_delete_files_toggled)
+        layout.addWidget(self.delete_files_checkbox)
+
+        self.warning_label = QLabel("⚠ The downloaded files will be permanently deleted.")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setStyleSheet("color: #dc3545; font-size: 11px;")
+        self.warning_label.hide()
+        layout.addWidget(self.warning_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        self.delete_btn = QPushButton("Delete Task")
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setStyleSheet("font-weight: bold; padding: 6px 18px; color: #e55;")
+        self.delete_btn.setDefault(True)
+        self.delete_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.delete_btn)
+        layout.addLayout(btn_row)
+
+    def _on_delete_files_toggled(self, checked: bool):
+        self.warning_label.setVisible(checked)
+        self.delete_btn.setText("Delete Task && Files" if checked else "Delete Task")
+
+    def delete_files(self) -> bool:
+        return self.delete_files_checkbox.isChecked()
+
+
 class TasksTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -732,6 +872,9 @@ class TasksTab(QWidget):
         card.run_requested.connect(self._run_task)
         card.edit_requested.connect(self._edit_task)
         card.delete_requested.connect(self._delete_task)
+        existing_log = task_logs.read(task.id)
+        if existing_log:
+            card.load_log(existing_log)
         self._cards[task.id] = card
         self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
@@ -774,18 +917,21 @@ class TasksTab(QWidget):
             card.update_task(task)
             card.set_running(True)
             card.append_log(f"⏳ Starting task: {task.name}")
+        task_logs.start_run(task_id)
+        task_logs.append(task_id, f"⏳ Starting task: {task.name}")
         worker = TaskWorker(task)
         worker.log_signal.connect(lambda msg, tid=task_id: self._on_log(tid, msg))
         worker.progress_signal.connect(
             lambda cur, tot, tid=task_id: self._on_progress(tid, cur, tot)
         )
         worker.finished_signal.connect(
-            lambda ok, err, tid=task_id: self._on_finished(tid, ok, err)
+            lambda ok, err, files, tid=task_id: self._on_finished(tid, ok, err, files)
         )
         self._workers[task_id] = worker
         worker.start()
 
     def _on_log(self, task_id: str, msg: str):
+        task_logs.append(task_id, msg)
         card = self._cards.get(task_id)
         if card:
             card.append_log(msg)
@@ -795,18 +941,30 @@ class TasksTab(QWidget):
         if card:
             card.update_progress(current, total)
 
-    def _on_finished(self, task_id: str, success: bool, error_msg: str):
+    def _on_finished(self, task_id: str, success: bool, error_msg: str, output_files: list):
         task = self._manager.get(task_id)
         card = self._cards.get(task_id)
         if task:
             task.status = TaskStatus.COMPLETED if success else TaskStatus.ERROR
             task.error_message = error_msg if not success else None
+            if success:
+                task.output_files = output_files
             self._manager.update(task)
+
+        final_msg = "\n✅ Task completed!" if success else f"\n❌ Task failed: {error_msg}"
+        task_logs.append(task_id, final_msg)
         if card:
             card.set_running(False)
             if task:
                 card.update_task(task)
-            card.append_log("\n✅ Task completed!" if success else f"\n❌ Task failed: {error_msg}")
+            card.append_log(final_msg)
+
+        task_name = task.name if task else "Task"
+        if success:
+            notify("Task completed", f'"{task_name}" finished successfully.')
+        else:
+            notify("Task failed", f'"{task_name}" failed: {error_msg}', is_error=True)
+
         self._workers.pop(task_id, None)
 
     def _edit_task(self, task_id: str):
@@ -843,17 +1001,15 @@ class TasksTab(QWidget):
         task = self._manager.get(task_id)
         if not task:
             return
-        reply = QMessageBox.question(
-            self, "Delete Task", f'Delete "{task.name}"?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        dlg = DeleteTaskDialog(task, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
+        delete_files = dlg.delete_files()
         card = self._cards.pop(task_id, None)
         if card:
             card.setParent(None)
             card.deleteLater()
-        self._manager.delete(task_id)
+        self._manager.delete(task_id, delete_files=delete_files)
 
 
 # ---------------------------------------------------------------------------
@@ -970,9 +1126,13 @@ class DownloadTab(QWidget):
         self._worker.finished_signal.connect(self._download_finished)
         self._worker.start()
 
-    def _download_finished(self):
+    def _download_finished(self, success: bool):
         self.start_btn.setEnabled(True)
         self.start_btn.setText("Start Download")
+        if success:
+            notify("Download finished", "All downloads completed successfully.")
+        else:
+            notify("Download failed", "The download finished with errors — check the log.", is_error=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1047,6 +1207,15 @@ class ConfigTab(QWidget):
         self.open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_folder_btn.clicked.connect(self._open_folder)
         actions_row.addWidget(self.open_folder_btn)
+
+        open_app_folder_btn = QPushButton("Open ARCGDLW Folder")
+        open_app_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_app_folder_btn.setToolTip(
+            "Opens ARCGDLW's own settings/data folder "
+            "(app_settings.json, tasks.json, previews) — not the gallery-dl config folder."
+        )
+        open_app_folder_btn.clicked.connect(self._open_app_folder)
+        actions_row.addWidget(open_app_folder_btn)
 
         layout.addLayout(actions_row)
 
@@ -1148,13 +1317,10 @@ class ConfigTab(QWidget):
         config_path = self._resolve_config_path()
         if not config_path:
             return
-        folder = str(config_path.parent)
-        for cmd in (["xdg-open", folder], ["dolphin", folder], ["nautilus", folder]):
-            try:
-                subprocess.Popen(cmd, env=subprocess_env())
-                return
-            except FileNotFoundError:
-                continue
+        open_in_file_manager(config_path.parent)
+
+    def _open_app_folder(self):
+        open_in_file_manager(get_app_data_dir())
 
     def _save_config(self):
         config_path = self._resolve_config_path()

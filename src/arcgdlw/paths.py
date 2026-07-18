@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,6 +31,21 @@ def resource_path(*parts: str) -> Path:
     """
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
     return base.joinpath(*parts)
+
+
+def open_in_file_manager(path: Path) -> None:
+    """Open *path* in the OS's default file manager."""
+    if sys.platform == "win32":
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)], env=subprocess_env())
+    else:
+        for cmd in (["xdg-open", str(path)], ["dolphin", str(path)], ["nautilus", str(path)]):
+            try:
+                subprocess.Popen(cmd, env=subprocess_env())
+                return
+            except FileNotFoundError:
+                continue
 
 
 def subprocess_env() -> dict:

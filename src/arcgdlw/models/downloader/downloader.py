@@ -10,6 +10,12 @@ from pathlib import Path
 from arcgdlw.paths import subprocess_env
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|]')
+
+
+class _NonRetryableDownloadError(RuntimeError):
+    """A gallery-dl failure that retrying won't fix (e.g. a filesystem limit
+    tripped by the site's own filename template)."""
 
 
 class Downloader:
@@ -23,6 +29,7 @@ class Downloader:
         configFile: str | None = None,
         cookiesFile: str | None = None,
         createSubfolder: bool = False,
+        archiveName: str | None = None,
     ) -> None:
         self.urls = urls
 
@@ -38,6 +45,7 @@ class Downloader:
         self.configFile = configFile
         self.cookiesFile = cookiesFile
         self.createSubfolder = createSubfolder
+        self.archiveName = archiveName
 
         self._verify_dependencies()
 
@@ -68,10 +76,23 @@ class Downloader:
         )
         if result.returncode != 0:
             detail = _ANSI_RE.sub("", result.stderr or result.stdout or "").strip()
-            if detail:
-                tail = "\n".join(detail.splitlines()[-3:])
-                raise RuntimeError(f"gallery-dl failed (exit {result.returncode}): {tail}")
-            raise RuntimeError(f"gallery-dl failed with exit code {result.returncode}")
+            tail = "\n".join(detail.splitlines()[-3:]) if detail else ""
+            message = (
+                f"gallery-dl failed (exit {result.returncode}): {tail}"
+                if tail else f"gallery-dl failed with exit code {result.returncode}"
+            )
+
+            if "File name too long" in detail or "Errno 36" in detail:
+                message += (
+                    "\n\nThis site generated a filename/path longer than your filesystem "
+                    "allows. Retrying won't help — fix it by adding a length limit to that "
+                    "site's filename or directory template in your gallery-dl config "
+                    "(Config tab), e.g. change {title} to {title:.100} to cap it at "
+                    "100 characters."
+                )
+                raise _NonRetryableDownloadError(message)
+
+            raise RuntimeError(message)
 
         after = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
         new_files = list(after - before)
@@ -191,20 +212,22 @@ class Downloader:
 
         return file
 
-    def _archive_files(self, files: list[Path], dest_folder: Path) -> Path:
+    @staticmethod
+    def _sanitize_archive_name(name: str) -> str:
+        cleaned = _UNSAFE_FILENAME_RE.sub("_", name).strip()
+        return cleaned or "download"
+
+    def _archive_files(self, files: list[Path], dest_folder: Path, archive_base_name: str) -> Path:
         if not files:
             raise RuntimeError("No files to archive.")
 
-        # Try to name the archive based on the gallery-dl output subfolder name
-        base_dir = files[0].parent
-        archive_name = base_dir.name if base_dir.name else "download"
-        archive_path = dest_folder / f"{archive_name}.{self.archiveFormat}"
+        archive_path = dest_folder / f"{archive_base_name}.{self.archiveFormat}"
 
         # Prevent overwriting existing archives in the output folder
         counter = 1
         while archive_path.exists():
             archive_path = (
-                dest_folder / f"{archive_name}_{counter}.{self.archiveFormat}"
+                dest_folder / f"{archive_base_name}_{counter}.{self.archiveFormat}"
             )
             counter += 1
 
@@ -224,49 +247,131 @@ class Downloader:
         all_final_files = []
         total = len(self.urls)
 
-        for i, url in enumerate(self.urls):
-            if progress_callback:
-                progress_callback(i, total)
-            if log_callback:
-                log_callback(f"\n⏳ Processing URL: {url}")
+        # When archiving, each URL's files are staged into their own
+        # sub-directory (surviving the per-URL temp cleanup below) so we can
+        # decide, once every URL is done, how to bundle them: one archive per
+        # URL (named after gallery-dl's output folder, e.g. chapters/galleries
+        # with several files each) or — only when *every* URL yielded exactly
+        # one file (e.g. a run of single-image posts) — a single combined
+        # archive.
+        archive_staging_dir = Path(tempfile.mkdtemp()) if self.archiveFormat else None
+        archive_groups: list[dict] = []  # [{"name": str, "files": [Path, ...]}, ...]
 
-            temp_dir_path = Path(tempfile.mkdtemp())
+        try:
+            for i, url in enumerate(self.urls):
+                if progress_callback:
+                    progress_callback(i, total)
+                if log_callback:
+                    log_callback(f"\n⏳ Processing URL: {url}")
 
-            try:
-                downloaded_files = None
-                for attempt in range(1, max_retries + 1):
-                    try:
-                        downloaded_files = self._download_with_gallery_dl(temp_dir_path, url)
-                        break
-                    except Exception as e:
-                        if log_callback:
-                            log_callback(f"⚠️ Attempt {attempt}/{max_retries} failed for {url}: {e}")
-                        if attempt < max_retries:
+                temp_dir_path = Path(tempfile.mkdtemp())
+
+                try:
+                    downloaded_files = None
+                    non_retryable = False
+                    for attempt in range(1, max_retries + 1):
+                        try:
+                            downloaded_files = self._download_with_gallery_dl(temp_dir_path, url)
+                            break
+                        except _NonRetryableDownloadError as e:
+                            # Retrying deterministic failures (e.g. a filesystem
+                            # filename-length limit) just wastes time — fail fast.
                             if log_callback:
-                                log_callback(f"🔄 Retrying in {retry_delay:.0f}s...")
-                            time.sleep(retry_delay)
-                            shutil.rmtree(temp_dir_path)
-                            temp_dir_path.mkdir()
+                                log_callback(f"❌ {e}")
+                            non_retryable = True
+                            break
+                        except Exception as e:
+                            if log_callback:
+                                log_callback(f"⚠️ Attempt {attempt}/{max_retries} failed for {url}: {e}")
+                            if attempt < max_retries:
+                                if log_callback:
+                                    log_callback(f"🔄 Retrying in {retry_delay:.0f}s...")
+                                time.sleep(retry_delay)
+                                shutil.rmtree(temp_dir_path)
+                                temp_dir_path.mkdir()
 
-                if downloaded_files is None:
-                    if log_callback:
-                        log_callback(f"❌ All {max_retries} attempts failed for {url}, skipping.")
-                    continue
+                    if non_retryable:
+                        continue
 
-                if not downloaded_files:
-                    if log_callback:
-                        log_callback("⚠️ No new files found.")
-                    continue
+                    if downloaded_files is None:
+                        if log_callback:
+                            log_callback(f"❌ All {max_retries} attempts failed for {url}, skipping.")
+                        continue
 
-                processed_files = [
-                    self._process_file(file) for file in downloaded_files
-                ]
+                    if not downloaded_files:
+                        if log_callback:
+                            log_callback("⚠️ No new files found.")
+                        continue
 
-                # 1. Archive requested
-                if self.archiveFormat:
+                    processed_files = [
+                        self._process_file(file) for file in downloaded_files
+                    ]
+
+                    # 1. Archive requested — stage this URL's files as their
+                    #    own group; bundling into one or several archives is
+                    #    decided once all URLs have been processed.
+                    if self.archiveFormat:
+                        assert archive_staging_dir is not None
+                        group_name = processed_files[0].parent.name
+                        group_dir = archive_staging_dir / f"group_{i}"
+                        group_dir.mkdir()
+
+                        group_files = []
+                        for file in processed_files:
+                            dest = group_dir / file.name
+                            counter = 1
+                            while dest.exists():
+                                dest = group_dir / f"{dest.stem}_{counter}{dest.suffix}"
+                                counter += 1
+                            shutil.move(str(file), str(dest))
+                            group_files.append(dest)
+                        archive_groups.append({"name": group_name, "files": group_files})
+
+                    # 2. No archive requested (Flat files)
+                    else:
+                        for file in processed_files:
+                            if self.createSubfolder:
+                                # Preserve the folder structure gallery-dl generated
+                                # for this URL (e.g. category/user/...) instead of
+                                # dumping every file straight into the output folder.
+                                dest = self.outputFolder / file.relative_to(temp_dir_path)
+                                dest.parent.mkdir(parents=True, exist_ok=True)
+                            else:
+                                dest = self.outputFolder / file.name
+
+                            # Prevent overwriting files with the same name
+                            counter = 1
+                            while dest.exists():
+                                dest = (
+                                    dest.parent
+                                    / f"{dest.stem}_{counter}{dest.suffix}"
+                                )
+                                counter += 1
+
+                            shutil.move(str(file), str(dest))
+                            all_final_files.append(dest)
+
+                            if log_callback:
+                                log_callback(
+                                    f"📄 Saved: {dest.relative_to(self.outputFolder)}"
+                                )
+
+                finally:
+                    shutil.rmtree(temp_dir_path, ignore_errors=True)
+
+            if self.archiveFormat and archive_groups:
+                all_single_file = all(len(g["files"]) == 1 for g in archive_groups)
+
+                if len(archive_groups) > 1 and all_single_file:
+                    # Every URL was a single image — bundle them all into one archive.
+                    combined_files = [f for g in archive_groups for f in g["files"]]
+                    archive_base_name = (
+                        self._sanitize_archive_name(self.archiveName)
+                        if self.archiveName else "download"
+                    )
                     try:
                         archive_path = self._archive_files(
-                            processed_files, self.outputFolder
+                            combined_files, self.outputFolder, archive_base_name
                         )
                         all_final_files.append(archive_path)
                         if log_callback:
@@ -274,38 +379,22 @@ class Downloader:
                     except Exception as e:
                         if log_callback:
                             log_callback(f"⚠️ Archiving error: {e}")
-
-                # 2. No archive requested (Flat files)
                 else:
-                    for file in processed_files:
-                        if self.createSubfolder:
-                            # Preserve the folder structure gallery-dl generated
-                            # for this URL (e.g. category/user/...) instead of
-                            # dumping every file straight into the output folder.
-                            dest = self.outputFolder / file.relative_to(temp_dir_path)
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                        else:
-                            dest = self.outputFolder / file.name
-
-                        # Prevent overwriting files with the same name
-                        counter = 1
-                        while dest.exists():
-                            dest = (
-                                dest.parent
-                                / f"{dest.stem}_{counter}{dest.suffix}"
+                    # One archive per URL, named after gallery-dl's output folder.
+                    for group in archive_groups:
+                        try:
+                            archive_path = self._archive_files(
+                                group["files"], self.outputFolder, group["name"]
                             )
-                            counter += 1
-
-                        shutil.move(str(file), str(dest))
-                        all_final_files.append(dest)
-
-                        if log_callback:
-                            log_callback(
-                                f"📄 Saved: {dest.relative_to(self.outputFolder)}"
-                            )
-
-            finally:
-                shutil.rmtree(temp_dir_path, ignore_errors=True)
+                            all_final_files.append(archive_path)
+                            if log_callback:
+                                log_callback(f"📦 Created archive: {archive_path.name}")
+                        except Exception as e:
+                            if log_callback:
+                                log_callback(f"⚠️ Archiving error: {e}")
+        finally:
+            if archive_staging_dir:
+                shutil.rmtree(archive_staging_dir, ignore_errors=True)
 
         if progress_callback:
             progress_callback(total, total)
