@@ -53,6 +53,7 @@ export interface Settings {
 export interface Paths {
   app_data_dir: string;
   config_dir: string | null;
+  default_output_dir: string;
 }
 
 export type TaskStreamMessage =

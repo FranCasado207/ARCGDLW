@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 const CONTROL_CLASSES =
   "w-full rounded-lg border border-app-border bg-app-bg px-3 py-1.5 text-sm text-app-text outline-none focus:border-app-accent disabled:opacity-60";
@@ -13,10 +13,6 @@ export function TextField(props: InputHTMLAttributes<HTMLInputElement>) {
 
 export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${CONTROL_CLASSES} resize-none ${props.className ?? ""}`} />;
-}
-
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${CONTROL_CLASSES} ${props.className ?? ""}`} />;
 }
 
 interface CheckboxProps {

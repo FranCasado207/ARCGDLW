@@ -1,13 +1,16 @@
 /** Thin wrappers around Tauri plugins. Every call is wrapped in try/catch
- * because these are no-ops (not errors) when the app runs outside a Tauri
- * webview, e.g. `vite dev` opened directly in a browser tab. */
+ * since these are also no-ops (not errors) when the app runs outside a
+ * Tauri webview, e.g. `vite dev` opened directly in a browser tab - but
+ * real failures (bad path, missing permission, ...) are still logged so
+ * they're visible in the webview's devtools instead of failing silently. */
 
 export async function pickFolder(defaultPath?: string): Promise<string | null> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const result = await open({ directory: true, defaultPath });
     return typeof result === "string" ? result : null;
-  } catch {
+  } catch (e) {
+    console.error("pickFolder failed", e);
     return null;
   }
 }
@@ -25,7 +28,8 @@ export async function pickFile(
       filters: [{ name: "Allowed files", extensions }],
     });
     return typeof result === "string" ? result : null;
-  } catch {
+  } catch (e) {
+    console.error("pickFile failed", e);
     return null;
   }
 }
@@ -34,8 +38,8 @@ export async function revealFile(path: string): Promise<void> {
   try {
     const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
     await revealItemInDir(path);
-  } catch {
-    // not running inside Tauri; nothing we can do
+  } catch (e) {
+    console.error("revealFile failed", path, e);
   }
 }
 
@@ -43,8 +47,8 @@ export async function openFolder(path: string): Promise<void> {
   try {
     const { openPath } = await import("@tauri-apps/plugin-opener");
     await openPath(path);
-  } catch {
-    // not running inside Tauri; nothing we can do
+  } catch (e) {
+    console.error("openFolder failed", path, e);
   }
 }
 
@@ -60,7 +64,7 @@ export async function notify(title: string, body: string): Promise<void> {
     if (granted) {
       sendNotification({ title, body });
     }
-  } catch {
-    // not running inside Tauri; nothing we can do
+  } catch (e) {
+    console.error("notify failed", e);
   }
 }

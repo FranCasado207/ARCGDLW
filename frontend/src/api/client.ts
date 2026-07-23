@@ -71,9 +71,23 @@ export const api = {
   getPaths: () => request<Paths>("/api/paths"),
 };
 
-export async function previewSrc(previewUrl: string): Promise<string> {
+/**
+ * Fetches the preview image as a blob and returns an object URL, instead of
+ * pointing <img src> straight at a raw http://127.0.0.1:port URL. The
+ * packaged app's page loads from a secure custom scheme (tauri://localhost),
+ * and some WebKitGTK/webview configurations block that page from loading
+ * plain-http subresources as mixed content - object URLs sidestep that
+ * entirely since they never leave the page's own origin. Callers must
+ * URL.revokeObjectURL() the result once done with it.
+ */
+export async function fetchPreviewObjectUrl(previewUrl: string): Promise<string> {
   const { token } = await getBackendInfo();
-  return `${await httpBase()}${previewUrl}?token=${token}`;
+  const res = await fetch(`${await httpBase()}${previewUrl}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new ApiError(`Failed to load preview: ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 async function openStream(path: string, onMessage: (raw: string) => void): Promise<() => void> {

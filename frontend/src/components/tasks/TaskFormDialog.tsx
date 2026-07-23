@@ -3,7 +3,8 @@ import type { Task, TaskInput } from "../../api/types";
 import { pickFile, pickFolder } from "../../lib/native";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
-import { Checkbox, FieldLabel, Select, TextArea, TextField } from "../ui/Field";
+import { Checkbox, FieldLabel, TextArea, TextField } from "../ui/Field";
+import { Select } from "../ui/Select";
 
 interface TaskFormDialogProps {
   open: boolean;
@@ -150,14 +151,9 @@ export function TaskFormDialog({ open, task, defaultOutputFolder, onClose, onSub
             <Select
               className="w-32"
               value={form.target_format}
-              onChange={(e) => setForm((f) => ({ ...f, target_format: e.target.value }))}
-            >
-              {["gif", "mp4", "webm", "mkv"].map((fmt) => (
-                <option key={fmt} value={fmt}>
-                  {fmt}
-                </option>
-              ))}
-            </Select>
+              onChange={(v) => setForm((f) => ({ ...f, target_format: v }))}
+              options={["gif", "mp4", "webm", "mkv"].map((fmt) => ({ value: fmt, label: fmt }))}
+            />
             <Checkbox
               label="Force conversion (Override)"
               checked={form.override_format}
@@ -172,16 +168,9 @@ export function TaskFormDialog({ open, task, defaultOutputFolder, onClose, onSub
           <Select
             className="w-36"
             value={form.archive_format ?? "None"}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, archive_format: e.target.value === "None" ? null : e.target.value }))
-            }
-          >
-            {["None", "zip", "cbz", "rar", "cbr"].map((fmt) => (
-              <option key={fmt} value={fmt}>
-                {fmt}
-              </option>
-            ))}
-          </Select>
+            onChange={(v) => setForm((f) => ({ ...f, archive_format: v === "None" ? null : v }))}
+            options={["None", "zip", "cbz", "rar", "cbr"].map((fmt) => ({ value: fmt, label: fmt }))}
+          />
         </div>
 
         <div>

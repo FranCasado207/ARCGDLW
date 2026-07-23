@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { previewSrc } from "../../api/client";
+import { fetchPreviewObjectUrl } from "../../api/client";
 import type { Task } from "../../api/types";
 import { useTaskStream } from "../../hooks/useTaskStream";
 import { notify, openFolder, revealFile } from "../../lib/native";
@@ -55,15 +55,29 @@ export function TaskCard({ task, onTaskUpdated, onEdit, onDelete, onRun }: TaskC
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | null = null;
+
     if (task.preview_url) {
-      previewSrc(task.preview_url).then((url) => {
-        if (!cancelled) setPreviewUrl(url);
-      });
+      fetchPreviewObjectUrl(task.preview_url)
+        .then((url) => {
+          if (cancelled) {
+            URL.revokeObjectURL(url);
+          } else {
+            objectUrl = url;
+            setPreviewUrl(url);
+          }
+        })
+        .catch((e) => {
+          console.error("Failed to load task preview", e);
+          if (!cancelled) setPreviewUrl(null);
+        });
     } else {
       setPreviewUrl(null);
     }
+
     return () => {
       cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [task.preview_url]);
 

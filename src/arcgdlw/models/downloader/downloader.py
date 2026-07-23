@@ -33,8 +33,11 @@ class Downloader:
     ) -> None:
         self.urls = urls
 
-        # Set up final destination folder
-        self.outputFolder = Path(outputFolder)
+        # Resolved to absolute: output_files built from this are persisted and
+        # later handed to the OS file manager (Tauri opener) by a different
+        # process than this one, so a relative path here would resolve
+        # against the wrong working directory there.
+        self.outputFolder = Path(outputFolder).expanduser().resolve()
         self.outputFolder.mkdir(parents=True, exist_ok=True)
 
         self.targetFormat = targetFormat.lower().lstrip(".")

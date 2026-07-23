@@ -23,6 +23,19 @@ def get_app_data_dir() -> Path:
     return data_dir
 
 
+def get_default_output_dir() -> Path:
+    """Default download destination, offered to the frontend as an absolute
+    starting point (instead of a relative "./downloads" the frontend would
+    have no consistent way to resolve itself, and that would break opening
+    the resulting files/folder from the OS file manager if the backend's
+    working directory ever differs from wherever the app was launched)."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("USERPROFILE", Path.home()))
+    else:
+        base = Path.home()
+    return base / "Downloads" / APP_NAME
+
+
 def subprocess_env() -> dict:
     """Environment for launching external tools (gallery-dl, ffmpeg, rar,
     kdialog, xdg-open, ...).

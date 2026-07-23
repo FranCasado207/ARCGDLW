@@ -6,20 +6,22 @@ import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { TaskCard } from "./TaskCard";
 import { TaskFormDialog } from "./TaskFormDialog";
 
-const DEFAULT_OUTPUT_FOLDER = "./downloads";
-
 export function TasksTab() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+  const [defaultOutputFolder, setDefaultOutputFolder] = useState("");
 
   useEffect(() => {
     api
       .listTasks()
       .then(setTasks)
       .finally(() => setLoading(false));
+    // An absolute default, not a relative "./downloads" the frontend has no
+    // consistent way to resolve - see get_default_output_dir() on the backend.
+    api.getPaths().then((paths) => setDefaultOutputFolder(paths.default_output_dir));
   }, []);
 
   function upsertTask(task: Task) {
@@ -103,7 +105,7 @@ export function TasksTab() {
           key={editingTask?.id ?? "new"}
           open={formOpen}
           task={editingTask}
-          defaultOutputFolder={DEFAULT_OUTPUT_FOLDER}
+          defaultOutputFolder={defaultOutputFolder}
           onClose={() => {
             setFormOpen(false);
             setEditingTask(null);

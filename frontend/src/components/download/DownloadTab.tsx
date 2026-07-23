@@ -1,18 +1,23 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, openDownloadStream } from "../../api/client";
 import { notify, pickFolder } from "../../lib/native";
 import { Button } from "../ui/Button";
-import { Checkbox, FieldLabel, Select, TextArea, TextField } from "../ui/Field";
+import { Checkbox, FieldLabel, TextArea, TextField } from "../ui/Field";
+import { Select } from "../ui/Select";
 
 export function DownloadTab() {
   const [urlsText, setUrlsText] = useState("");
-  const [outputFolder, setOutputFolder] = useState("./downloads");
+  const [outputFolder, setOutputFolder] = useState("");
   const [targetFormat, setTargetFormat] = useState("gif");
   const [overrideFormat, setOverrideFormat] = useState(false);
   const [archiveFormat, setArchiveFormat] = useState<string | null>(null);
   const [logs, setLogs] = useState("");
   const [running, setRunning] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    api.getPaths().then((paths) => setOutputFolder(paths.default_output_dir));
+  }, []);
 
   function appendLog(line: string) {
     setLogs((prev) => prev + line + "\n");
@@ -94,13 +99,12 @@ export function DownloadTab() {
       <div>
         <FieldLabel>Target Format</FieldLabel>
         <div className="flex items-center gap-3">
-          <Select className="w-32" value={targetFormat} onChange={(e) => setTargetFormat(e.target.value)}>
-            {["gif", "mp4", "webm", "mkv"].map((fmt) => (
-              <option key={fmt} value={fmt}>
-                {fmt}
-              </option>
-            ))}
-          </Select>
+          <Select
+            className="w-32"
+            value={targetFormat}
+            onChange={setTargetFormat}
+            options={["gif", "mp4", "webm", "mkv"].map((fmt) => ({ value: fmt, label: fmt }))}
+          />
           <Checkbox
             label="Force conversion (Override)"
             checked={overrideFormat}
@@ -115,14 +119,9 @@ export function DownloadTab() {
         <Select
           className="w-36"
           value={archiveFormat ?? "None"}
-          onChange={(e) => setArchiveFormat(e.target.value === "None" ? null : e.target.value)}
-        >
-          {["None", "zip", "cbz", "rar", "cbr"].map((fmt) => (
-            <option key={fmt} value={fmt}>
-              {fmt}
-            </option>
-          ))}
-        </Select>
+          onChange={(v) => setArchiveFormat(v === "None" ? null : v)}
+          options={["None", "zip", "cbz", "rar", "cbr"].map((fmt) => ({ value: fmt, label: fmt }))}
+        />
       </div>
 
       <div className="h-px bg-app-border" />

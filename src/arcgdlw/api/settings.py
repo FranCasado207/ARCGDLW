@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from arcgdlw import app_settings
 from arcgdlw.api.auth import require_token
 from arcgdlw.api.config import resolve_config_path
-from arcgdlw.paths import get_app_data_dir
+from arcgdlw.paths import get_app_data_dir, get_default_output_dir
 
 router = APIRouter(dependencies=[Depends(require_token)])
 
@@ -30,4 +30,5 @@ def get_paths():
     return {
         "app_data_dir": str(get_app_data_dir()),
         "config_dir": str(config_path.parent) if config_path else None,
+        "default_output_dir": str(get_default_output_dir()),
     }

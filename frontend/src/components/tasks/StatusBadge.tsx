@@ -7,14 +7,22 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   ERROR: "#dc3545",
 };
 
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  PENDING: "Pending",
+  RUNNING: "Running",
+  COMPLETED: "Completed",
+  ERROR: "Error",
+};
+
 export function StatusBadge({ status }: { status: TaskStatus }) {
   const color = STATUS_COLORS[status];
   return (
-    <span
-      className="w-[86px] shrink-0 rounded-full px-2 py-1 text-center text-[11px] font-bold"
-      style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
-    >
-      {status}
+    <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-app-text dark:bg-white/10">
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === "RUNNING" ? "animate-pulse" : ""}`}
+        style={{ background: color }}
+      />
+      {STATUS_LABELS[status]}
     </span>
   );
 }
