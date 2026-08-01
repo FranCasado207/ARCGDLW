@@ -22,3 +22,8 @@ upscale_models
 pkg
 __pycache__
 previews
+
+
+ARCGDLW-x86_64.AppImage
+appimagetool
+AppDir
