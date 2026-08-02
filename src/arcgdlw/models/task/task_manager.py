@@ -47,6 +47,26 @@ class TaskManager:
         self._tasks = [t for t in self._tasks if t.id != task_id]
         self._save()
 
+    def clone(self, task: Task) -> Task:
+        """Duplicate a task's configuration as a new, independent PENDING task."""
+        cloned = Task(
+            name=f"{task.name} (copy)",
+            urls=list(task.urls),
+            output_folder=task.output_folder,
+            target_format=task.target_format,
+            override_format=task.override_format,
+            archive_format=task.archive_format,
+            cookies_file=task.cookies_file,
+            create_subfolder=task.create_subfolder,
+            start_automatically=False,
+        )
+        if task.preview_image and task.preview_image.exists():
+            dest = PREVIEWS_DIR / f"{cloned.id}_preview{task.preview_image.suffix}"
+            shutil.copy2(task.preview_image, dest)
+            cloned.preview_image = dest
+        self.create(cloned)
+        return cloned
+
     def fetch_preview(self, task: Task) -> Optional[Path]:
         """Download only the first file from the first URL to use as a thumbnail."""
         from arcgdlw import app_settings

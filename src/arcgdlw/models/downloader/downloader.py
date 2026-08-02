@@ -1,8 +1,10 @@
 import json
+import queue
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -52,8 +54,20 @@ class Downloader:
             if shutil.which(executable) is None:
                 raise RuntimeError(f"Required executable not found: {executable}")
 
-    def _download_with_gallery_dl(self, target_folder: Path, url: str) -> list[Path]:
-        """Now processes a single URL at a time."""
+    def _download_with_gallery_dl(
+        self,
+        target_folder: Path,
+        url: str,
+        cancel_event: threading.Event | None = None,
+        log_callback=None,
+    ) -> tuple[list[Path], bool]:
+        """Now processes a single URL at a time.
+
+        Streams gallery-dl's own stdout/stderr line-by-line as it downloads
+        (via a background reader thread + queue) instead of blocking until
+        the whole gallery finishes, so the UI log shows live progress and a
+        cancellation request can terminate the process promptly.
+        """
         before = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
 
         cmd = ["gallery-dl", "-d", str(target_folder)]
@@ -63,20 +77,65 @@ class Downloader:
             cmd += ["--cookies", str(self.cookiesFile)]
         cmd.append(url)
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, env=subprocess_env()
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=subprocess_env(),
         )
-        if result.returncode != 0:
-            detail = _ANSI_RE.sub("", result.stderr or result.stdout or "").strip()
-            if detail:
-                tail = "\n".join(detail.splitlines()[-3:])
-                raise RuntimeError(f"gallery-dl failed (exit {result.returncode}): {tail}")
-            raise RuntimeError(f"gallery-dl failed with exit code {result.returncode}")
+
+        line_queue: "queue.Queue[str | None]" = queue.Queue()
+
+        def _reader():
+            try:
+                for line in iter(proc.stdout.readline, ""):
+                    line_queue.put(line)
+            finally:
+                line_queue.put(None)  # sentinel: stdout closed
+
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+
+        output_lines: list[str] = []
+        cancelled = False
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                cancelled = True
+                proc.terminate()
+                break
+            try:
+                line = line_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            clean = _ANSI_RE.sub("", line).rstrip("\n")
+            if clean:
+                output_lines.append(clean)
+                if log_callback:
+                    log_callback(f"    {clean}")
+
+        if cancelled:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        else:
+            proc.wait()
+
+        if not cancelled and proc.returncode != 0:
+            tail = "\n".join(output_lines[-3:]).strip()
+            if tail:
+                raise RuntimeError(f"gallery-dl failed (exit {proc.returncode}): {tail}")
+            raise RuntimeError(f"gallery-dl failed with exit code {proc.returncode}")
 
         after = {p.resolve() for p in target_folder.rglob("*") if p.is_file()}
         new_files = list(after - before)
 
-        return sorted(new_files)
+        return sorted(new_files), cancelled
 
     def _video_info(self, file: Path) -> dict:
         result = subprocess.run(
@@ -219,12 +278,26 @@ class Downloader:
 
         return archive_path
 
-    def download(self, log_callback=None, progress_callback=None, max_retries: int = 3, retry_delay: float = 5.0) -> list[Path]:
+    def download(
+        self,
+        log_callback=None,
+        progress_callback=None,
+        max_retries: int = 3,
+        retry_delay: float = 5.0,
+        cancel_event: threading.Event | None = None,
+    ) -> tuple[list[Path], bool]:
         """Loops through URLs sequentially to prevent archive collisions."""
         all_final_files = []
         total = len(self.urls)
+        was_cancelled = False
 
         for i, url in enumerate(self.urls):
+            if cancel_event is not None and cancel_event.is_set():
+                was_cancelled = True
+                if log_callback:
+                    log_callback("\n🛑 Cancelled.")
+                break
+
             if progress_callback:
                 progress_callback(i, total)
             if log_callback:
@@ -234,9 +307,12 @@ class Downloader:
 
             try:
                 downloaded_files = None
+                url_cancelled = False
                 for attempt in range(1, max_retries + 1):
                     try:
-                        downloaded_files = self._download_with_gallery_dl(temp_dir_path, url)
+                        downloaded_files, url_cancelled = self._download_with_gallery_dl(
+                            temp_dir_path, url, cancel_event, log_callback
+                        )
                         break
                     except Exception as e:
                         if log_callback:
@@ -256,6 +332,11 @@ class Downloader:
                 if not downloaded_files:
                     if log_callback:
                         log_callback("⚠️ No new files found.")
+                    if url_cancelled:
+                        was_cancelled = True
+                        if log_callback:
+                            log_callback("\n🛑 Cancelled.")
+                        break
                     continue
 
                 processed_files = [
@@ -304,10 +385,18 @@ class Downloader:
                                 f"📄 Saved: {dest.relative_to(self.outputFolder)}"
                             )
 
+                if url_cancelled:
+                    was_cancelled = True
+                    if log_callback:
+                        log_callback("\n🛑 Cancelled — files already downloaded were saved.")
+
             finally:
                 shutil.rmtree(temp_dir_path, ignore_errors=True)
+
+            if was_cancelled:
+                break
 
         if progress_callback:
             progress_callback(total, total)
 
-        return all_final_files
+        return all_final_files, was_cancelled

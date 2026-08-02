@@ -32,6 +32,29 @@ def resource_path(*parts: str) -> Path:
     return base.joinpath(*parts)
 
 
+def ensure_user_path() -> None:
+    """Augments PATH with common per-user install locations.
+
+    Desktop launchers (double-click, app menu, xdg-open) spawn the process
+    with a minimal session PATH that often excludes places like
+    ~/.local/bin, unlike an interactive shell that sources .bashrc/.profile.
+    Tools installed via `pip install --user`, pipx, or cargo live there, so
+    without this a GUI-launched AppImage can fail dependency checks (e.g.
+    gallery-dl) even though a terminal launch works fine.
+    """
+    if sys.platform == "win32":
+        return
+
+    candidates = [Path.home() / ".local" / "bin", Path.home() / ".cargo" / "bin"]
+
+    current = os.environ.get("PATH", "")
+    existing = set(current.split(os.pathsep)) if current else set()
+
+    additions = [str(p) for p in candidates if p.is_dir() and str(p) not in existing]
+    if additions:
+        os.environ["PATH"] = os.pathsep.join(additions + ([current] if current else []))
+
+
 def subprocess_env() -> dict:
     """Environment for launching external tools (gallery-dl, ffmpeg, rar,
     kdialog, xdg-open, ...).

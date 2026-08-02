@@ -10,6 +10,7 @@ class TaskStatus(Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     ERROR = "ERROR"
+    CANCELLED = "CANCELLED"
 
 
 class Task:

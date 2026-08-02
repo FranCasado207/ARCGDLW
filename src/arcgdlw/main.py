@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from arcgdlw.models.downloader.downloader import Downloader
+from arcgdlw.paths import ensure_user_path
 
 
 def run_cli(args) -> None:
@@ -32,6 +33,8 @@ def run_cli(args) -> None:
 
 
 def main() -> None:
+    ensure_user_path()
+
     parser = argparse.ArgumentParser(description="Download and process gallery links.")
 
     parser.add_argument(
